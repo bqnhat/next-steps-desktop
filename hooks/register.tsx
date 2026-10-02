@@ -3,7 +3,7 @@
 /* @jsxFrag Fragment */
 // next-steps: when a turn ends, fork the session (shares the prompt cache, so
 // it has full context for the price of one short reply) and ask for up to
-// three likely next prompts. Draw them as 1/2/3 buttons in the band above the
+// three useful next prompts. Draw them as 1/2/3 buttons in the band above the
 // composer; a press writes that prompt into the real composer as the person's
 // draft ($.prompt.fill) for them to edit and Enter; 0 dismisses. The top
 // suggestion is also offered as the composer's dim Tab-to-take ghost text
@@ -11,7 +11,13 @@
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
 
-import type { CommandInfo, EngineInterface, Register, RenderElement } from 'claude-code'
+import type {
+  CommandInfo,
+  EngineInterface,
+  Register,
+  RenderElement,
+  RenderInputOf,
+} from 'claude-code'
 
 type Suggestion = { label: string; prompt: string }
 
@@ -88,11 +94,20 @@ function skillList(commands: readonly CommandInfo[]): string {
 
 function forkPrompt(skills: string): string {
   return (
-    'Do not continue the task. Instead, predict what the user is most likely to ask you next, ' +
-    `as up to ${MAX_SUGGESTIONS} concrete prompts written in the user's voice (imperative, specific to ` +
-    'this conversation: name the file, test, PR, or follow-up they would actually type). Prefer the ' +
-    'obvious next action (run the tests, commit, fix the thing you flagged, do the same for X) over generic ' +
-    'ones. If the conversation is clearly finished or nothing useful comes to mind, return an empty list.\n\n' +
+    'Do not continue the task. Instead, write the next prompts the user would be glad to send you: ' +
+    `up to ${MAX_SUGGESTIONS} prompts that move their actual goal forward the most, not the ones that are ` +
+    'merely the most likely or the most obvious.\n\n' +
+    'Find them in this conversation: what your last answer left unverified or only inferred, risks or ' +
+    'edge cases you noticed but did not handle, places where the same cause probably recurs, decisions ' +
+    "you left to the user, and parts of the user's request not done yet. Cover different angles (finish " +
+    'or verify what was just done, dig into a cause or a gap, take the next step toward the larger goal) ' +
+    'rather than three variants of one idea.\n\n' +
+    "Write each prompt in the user's voice and language, imperative and self-contained: name the exact " +
+    'file, function, test, command, PR or data involved, say what to find out or change, and say how ' +
+    'to tell it is done. Never suggest something already done in this conversation, something the ' +
+    "user's standing instructions rule out, or a bare generic step (run the tests, commit, review the " +
+    'code, explain more) unless it names exactly what and why. Fewer strong prompts beat filler; if ' +
+    'nothing worthwhile remains, return an empty list.\n\n' +
     (skills === ''
       ? ''
       : 'The user runs a skill or slash command by starting a prompt with its name. When one of them is ' +
@@ -147,6 +162,102 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
+type ShownView = Exclude<View, { kind: 'hidden' }>
+
+function fillDraft($: EngineInterface, prompt: string): void {
+  void $.prompt.fill({ text: prompt }).then(
+    r => r.isFilled || $.ui.toast('could not fill the prompt box'),
+    error => $.ui.toast(`could not fill: ${String(error)}`),
+  )
+}
+
+function terminalBand(
+  $: EngineInterface,
+  e: RenderInputOf<'AbovePrompt', 'terminal'>,
+  below: RenderElement,
+  shown: ShownView,
+): RenderElement {
+  const { Box, Text, Button } = $.ui.resolve(e)
+
+  if (shown.kind === 'loading') {
+    return (
+      <Box flexDirection="column">
+        {below}
+        <Box marginTop={1}>
+          <Text dimColor>next steps…</Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  const items = shown.items
+  return (
+    <Box flexDirection="column">
+      {below}
+      <Box marginTop={1} />
+      <Text dimColor>next:</Text>
+      {items.map((item, index) => (
+        <Box key={`s${index}`} marginLeft={2}>
+          <Button
+            hotkey={String(index + 1)}
+            plain
+            label={item.label}
+            onPress={() => fillDraft($, item.prompt)}
+          />
+        </Box>
+      ))}
+      <Box marginLeft={2}>
+        <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
+      </Box>
+    </Box>
+  )
+}
+
+function desktopBand(
+  $: EngineInterface,
+  e: RenderInputOf<'AbovePrompt', 'desktop'>,
+  below: RenderElement,
+  shown: ShownView,
+): RenderElement {
+  const { Box, Button } = $.ui.resolve(e)
+
+  if (shown.kind === 'loading') return below
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      {below}
+      <Box key="next-steps" flexDirection="row" alignItems="center" gap={1}>
+        <Box flexDirection="row" flexWrap="wrap" alignItems="center" gap={1} flexGrow={1} flexShrink={1}>
+          {shown.items.map((item, index) => (
+            <Box
+              key={`next-step-chip-${index + 1}`}
+              borderStyle="round"
+              borderDimColor
+              paddingX={1}
+              hover={{ borderDimColor: false }}
+            >
+              <Button
+                key={`next-step-${index + 1}`}
+                plain
+                dimColor
+                label={item.label}
+                onPress={() => fillDraft($, item.prompt)}
+              />
+            </Box>
+          ))}
+        </Box>
+        <Button
+          key="next-steps-dismiss"
+          plain
+          dimColor
+          label="✕"
+          onPress={() => show($, { kind: 'hidden' })}
+        />
+      </Box>
+    </Box>
+  )
+}
+
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
@@ -186,45 +297,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next): Promise<RenderElement> => {
     const below = await next(e)
     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
-    const { Box, Text, Button } = $.ui.resolve(e)
-
-    if (view.kind === 'loading') {
-      return (
-        <Box flexDirection="column">
-          {below}
-          <Box marginTop={1}>
-            <Text dimColor>next steps…</Text>
-          </Box>
-        </Box>
-      )
-    }
-
-    const items = view.items
-    return (
-      <Box flexDirection="column">
-        {below}
-        <Box marginTop={1} />
-        <Text dimColor>next:</Text>
-        {items.map((item, index) => (
-          <Box key={`s${index}`} marginLeft={2}>
-            <Button
-              hotkey={String(index + 1)}
-              plain
-              label={item.label}
-              onPress={() => {
-                show($, { kind: 'hidden' })
-                void $.prompt.fill({ text: item.prompt }).then(
-                  r => r.isFilled || $.ui.toast('could not fill the prompt box'),
-                  error => $.ui.toast(`could not fill: ${String(error)}`),
-                )
-              }}
-            />
-          </Box>
-        ))}
-        <Box marginLeft={2}>
-          <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
-        </Box>
-      </Box>
-    )
+    if (e.surface === 'terminal') return terminalBand($, e, below, view)
+    if (e.surface === 'desktop') return desktopBand($, e, below, view)
+    return below
   })
 }

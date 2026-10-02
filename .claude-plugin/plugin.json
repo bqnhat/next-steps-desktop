@@ -1,12 +1,12 @@
 {
-  "name": "next-steps",
-  "version": "1.0.0",
-  "description": "After each turn, suggests up to three next prompts above the input. Press 1, 2 or 3 to put one in the prompt box as a draft you can edit, 0 to dismiss.",
+  "name": "next-steps-desktop",
+  "version": "1.0.0-desktop.6",
+  "description": "After each turn, suggests up to three next prompts above the input, in the terminal and in Claude Code Desktop. Press 1, 2 or 3 (or click one) to put it in the prompt box as a draft you can edit, 0 to dismiss.",
   "author": {
     "name": "Thariq Shihipar"
   },
   "license": "MIT",
-  "keywords": ["suggestions", "next-steps", "prompt", "function-hooks", "ui"],
+  "keywords": ["suggestions", "next-steps", "prompt", "function-hooks", "ui", "desktop"],
   "userConfig": {
     "minAnswerChars": {
       "type": "number",

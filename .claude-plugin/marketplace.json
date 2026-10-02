@@ -1,0 +1,16 @@
+{
+  "name": "next-steps-desktop",
+  "owner": {
+    "name": "bqnhat"
+  },
+  "metadata": {
+    "description": "next-steps with a Claude Code Desktop renderer"
+  },
+  "plugins": [
+    {
+      "name": "next-steps-desktop",
+      "source": "./",
+      "description": "After each turn, suggests up to three next prompts above the input, in the terminal and in Claude Code Desktop; a press puts one in the prompt box as a draft"
+    }
+  ]
+}
