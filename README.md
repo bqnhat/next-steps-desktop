@@ -41,7 +41,7 @@ It is a function-hooks plugin (`hooks/register.tsx`):
 | Surface | What draws |
 | --- | --- |
 | `terminal` | The upstream tree, unchanged: `next:` and plain `1:` / `2:` / `3:` / `0: dismiss` buttons |
-| `desktop` | One row of chips: each suggestion a dim plain button (`next-step-1` to `next-step-3`, no hotkey badge) in a round, dim-bordered box whose border brightens on hover, wrapping inside the row, and a dim `✕` close button (`next-steps-dismiss`) at the trailing edge. Nothing is drawn while the suggestions load |
+| `desktop` | One row that never wraps: each suggestion a dim plain button (`next-step-1` to `next-step-3`, no hotkey badge, no border) with a dim `·` between them, and a dim `✕` close button (`next-steps-dismiss`) at the trailing edge. Labels are cut with `…` so all of them fit the band's width, and the fork is asked for labels of at most 32 characters; a press still fills the whole prompt. Nothing is drawn while the suggestions load |
 | `mobile`, `vscode` | Nothing: the engine raises `AbovePrompt` on the terminal and desktop surfaces only |
 
 On Desktop a press goes through `$.prompt.fill`, which the engine routes to the Desktop composer (`ui_prompt_fill`), so the prompt lands in the composer as a draft and is not sent.
@@ -65,7 +65,7 @@ In the Desktop Code tab the band appears only when the Claude Code that Desktop 
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
 ```
 
-`tests/next-steps.test.tsx` mounts `AbovePrompt` on the `terminal` and `desktop` surfaces and checks the buttons, the draft fill, dismiss, the hide on a new turn, both options, fork failure and text cleaning.
+`tests/next-steps.test.tsx` mounts `AbovePrompt` on the `terminal` and `desktop` surfaces and checks the buttons, the one-row layout and its label cut, the draft fill, dismiss, the hide on a new turn, both options, fork failure and text cleaning.
 
 ## License
 

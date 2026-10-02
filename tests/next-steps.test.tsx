@@ -124,7 +124,7 @@ describe('terminal renderer', () => {
 })
 
 describe('desktop renderer', () => {
-  test('draws the suggestions as bordered chips and a close control, with no label or hotkeys', async ($, on) => {
+  test('draws the suggestions in one unwrapped row with a close control, no borders, label or hotkeys', async ($, on) => {
     const w = world(on)
     await completeTurn($, w)
     const ui = await $.ui.mount({
@@ -144,10 +144,85 @@ describe('desktop renderer', () => {
     expect(buttons.map(b => b.props.label)).toEqual(['Run the tests', 'Review it', 'Settings page', '✕'])
     expect(buttons.map(b => b.props.hotkey)).toEqual([undefined, undefined, undefined, undefined])
     expect(buttons.every(b => b.props.plain === true && b.props.dimColor === true)).toBe(true)
-    const chips = (await ui.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'round')
-    expect(chips.map(c => c.key)).toEqual(['next-step-chip-1', 'next-step-chip-2', 'next-step-chip-3'])
-    expect(chips.every(c => c.props.borderDimColor === true)).toBe(true)
-    expect(await ui.find({ type: 'Text' })).toBeUndefined()
+    const boxes = await ui.findAll({ type: 'Box' })
+    expect(boxes.filter(box => box.props.borderStyle !== undefined)).toEqual([])
+    const row = boxes.find(box => box.key === 'next-steps')
+    expect(row?.props.flexWrap).toBe('nowrap')
+    expect(row?.props.overflow).toBe('hidden')
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.map(t => t.text)).toEqual(['·', '·'])
+    expect(texts.every(t => t.props.dimColor === true)).toBe(true)
+    const kids = (row?.children ?? []) as { type?: string; props?: Record<string, unknown> }[]
+    expect(kids[kids.length - 2]?.props?.flexGrow).toBe(1)
+    expect(kids[kids.length - 1]?.props?.label).toBe('✕')
+  })
+
+  test('counts wide letters twice, so a Japanese label is cut to the same room', async ($, on) => {
+    const w = world(on, JSON.stringify([{ label: '修正したファイルのテストを全部実行して結果を確認する', prompt: 'p' }, { label: 'Two', prompt: 'q' }, { label: 'Three', prompt: 'r' }]))
+    await completeTurn($, w)
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
+
+    expect((await ui.find({ type: 'Button', key: 'next-step-1' }))?.props.label).toBe('修正したファイルのテストを…')
+  })
+
+  test('cuts a label by code point, never inside a surrogate pair', async ($, on) => {
+    const w = world(on, JSON.stringify([{ label: '𝐀'.repeat(40), prompt: 'p' }, { label: 'Two', prompt: 'q' }, { label: 'Three', prompt: 'r' }]))
+    await completeTurn($, w)
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
+
+    expect((await ui.find({ type: 'Button', key: 'next-step-1' }))?.props.label).toBe(`${'𝐀'.repeat(26)}…`)
+  })
+
+  test('cuts long labels to share one row, and a press still fills the whole prompt', async ($, on) => {
+    const long = 'Trace why the chip test was not rebuilt after restart'
+    const w = world(
+      on,
+      JSON.stringify([
+        { label: long, prompt: 'first full prompt' },
+        { label: long, prompt: 'second full prompt' },
+        { label: long, prompt: 'third full prompt' },
+      ]),
+    )
+    await completeTurn($, w)
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      surface: 'desktop',
+      component: 'AbovePrompt',
+      props: BAND_PROPS,
+    })
+
+    const labels = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).slice(0, 3)
+    expect(labels).toEqual(['Trace why the chip test wa…', 'Trace why the chip test wa…', 'Trace why the chip test wa…'])
+
+    await ui.press({ key: 'next-step-2' })
+    expect(w.filled).toEqual([{ text: 'second full prompt', mode: 'replace' }])
+  })
+
+  test('a narrow band still keeps a readable piece of each label', async ($, on) => {
+    const w = world(
+      on,
+      JSON.stringify([
+        { label: 'Trace why the chip test was not rebuilt', prompt: 'first' },
+        { label: 'Two', prompt: 'second' },
+        { label: 'Three', prompt: 'third' },
+      ]),
+    )
+    await completeTurn($, w)
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      surface: 'desktop',
+      component: 'AbovePrompt',
+      props: { ...BAND_PROPS, bodyColumns: 20 },
+    })
+
+    expect((await ui.find({ type: 'Button', key: 'next-step-1' }))?.props.label).toBe('Trace why t…')
+  })
+
+  test('asks the fork for labels short enough to share one row', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+
+    expect(w.forkPrompts[0]).toContain('≤32 chars shown on a button')
   })
 
   test('a press puts the prompt in the composer as a draft, keeps the chips and never submits', async ($, on) => {
