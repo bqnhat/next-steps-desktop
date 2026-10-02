@@ -283,6 +283,7 @@ describe('shared behaviour', () => {
     expect(w.forkPrompts[0]).toContain('not the ones that are merely the most likely')
     expect(w.forkPrompts[0]).toContain('left unverified')
     expect(w.forkPrompts[0]).toContain('how to tell it is done')
+    expect(w.forkPrompts[0]).toContain('under 500 characters')
     expect(w.forkPrompts[0]).not.toContain('Prefer the obvious next action')
   })
 
@@ -301,6 +302,18 @@ describe('shared behaviour', () => {
 
     expect(await ui.find({ type: 'Button' })).toBeUndefined()
     expect(w.logged.some(line => line.includes('fork failed'))).toBe(true)
+  })
+
+  test('a 900-character prompt is filled whole, with no ellipsis', async ($, on) => {
+    const prompt = `${'abcd '.repeat(179)}abcde`
+    expect(prompt).toHaveLength(900)
+    const w = world(on, JSON.stringify([{ label: 'Long one', prompt }]))
+    await completeTurn($, w)
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
+
+    await ui.press({ key: 'next-step-1' })
+    expect(w.filled).toEqual([{ text: prompt, mode: 'replace' }])
+    expect(w.filled[0]?.text).not.toContain('…')
   })
 
   test('cleans escapes and controls, and refuses tag characters', async ($, on) => {

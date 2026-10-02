@@ -28,7 +28,7 @@ type View =
 
 const MAX_SUGGESTIONS = 3
 const LABEL_MAX = 48
-const PROMPT_MAX = 600
+const PROMPT_MAX = 1200
 const SKILL_NAME_MAX = 64
 const SKILL_DESCRIPTION_MAX = 120
 const SKILLS_DESCRIBED_BUDGET = 6000
@@ -104,10 +104,10 @@ function forkPrompt(skills: string): string {
     'rather than three variants of one idea.\n\n' +
     "Write each prompt in the user's voice and language, imperative and self-contained: name the exact " +
     'file, function, test, command, PR or data involved, say what to find out or change, and say how ' +
-    'to tell it is done. Never suggest something already done in this conversation, something the ' +
-    "user's standing instructions rule out, or a bare generic step (run the tests, commit, review the " +
-    'code, explain more) unless it names exactly what and why. Fewer strong prompts beat filler; if ' +
-    'nothing worthwhile remains, return an empty list.\n\n' +
+    'to tell it is done, all in under 500 characters. Never suggest something already done in this ' +
+    "conversation, something the user's standing instructions rule out, or a bare generic step (run " +
+    'the tests, commit, review the code, explain more) unless it names exactly what and why. Fewer ' +
+    'strong prompts beat filler; if nothing worthwhile remains, return an empty list.\n\n' +
     (skills === ''
       ? ''
       : 'The user runs a skill or slash command by starting a prompt with its name. When one of them is ' +
