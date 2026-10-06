@@ -1,5 +1,7 @@
 # next-steps-desktop
 
+> **Archived.** Development moved to [bqnhat/claude-local-plugins](https://github.com/bqnhat/claude-local-plugins/tree/main/plugins/next-steps-desktop). This repository is read-only and stops at `1.0.0-desktop.15`. Install `next-steps-desktop@nhat-local`, or `session-hub@nhat-local`, which includes it, from that marketplace.
+
 After each turn, suggests up to three next prompts: above the input box in the terminal, behind a 💡 chip in the footer of Claude Code Desktop.
 
 A fork of [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/87c843d52c12f4bc91bb23b47132eb08b70e6cb6/next-steps) (upstream commit `87c843d52c12f4bc91bb23b47132eb08b70e6cb6`, version 1.0.0, by Thariq Shihipar). The first commit of this repository is that upstream copy unchanged; the second holds every change. It adds a Desktop renderer and asks the fork for deeper suggestions; the rest of the suggestion logic is unchanged. It is renamed so it cannot clash with the upstream plugin.
