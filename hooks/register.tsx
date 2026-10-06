@@ -3,7 +3,7 @@
 /* @jsxFrag Fragment */
 // next-steps: when a turn ends, fork the session (shares the prompt cache, so
 // it has full context for the price of one short reply) and ask for up to
-// three useful next prompts. Draw them as 1/2/3 buttons in the band above the
+// three useful next prompts. Terminal: 1/2/3 buttons in the band above the
 // composer; a press writes that prompt into the real composer as the person's
 // draft ($.prompt.fill) for them to edit and Enter; 0 dismisses. The top
 // suggestion is also offered as the composer's dim Tab-to-take ghost text
@@ -11,6 +11,7 @@
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
 
+import { atom, read, update } from 'claude-code'
 import type {
   CommandInfo,
   EngineInterface,
@@ -19,22 +20,21 @@ import type {
   RenderInputOf,
 } from 'claude-code'
 
-type Suggestion = { label: string; prompt: string }
+import type { Suggestion, View } from '../types'
 
-type View =
-  | { kind: 'hidden' }
-  | { kind: 'loading'; turnId: string }
-  | { kind: 'offer'; items: Suggestion[] }
+const savedView = atom({ plugin: 'next-steps-desktop', key: 'view' } as const, { kind: 'hidden' })
 
 const MAX_SUGGESTIONS = 3
 const LABEL_MAX = 48
 const LABEL_TARGET = 32
 const LABEL_MIN = 12
-const COLUMN_PX = 8
-const CHAR_PX = 7
-const SEPARATOR_PX = 20
-const DISMISS_PX = 32
+const PREVIEW_MAX = 160
 const PROMPT_MAX = 1200
+const PANE = 'next-steps'
+const PANE_TITLE = 'Next steps'
+const ROW_FILL_CHAR = ' '
+const ROW_FILL_PER_COLUMN = 2.75
+const HOVER_BG = '#8080801f'
 const SKILL_NAME_MAX = 64
 const SKILL_DESCRIPTION_MAX = 120
 const SKILLS_DESCRIBED_BUDGET = 6000
@@ -160,12 +160,28 @@ function parseSuggestions(reply: string, known: ReadonlySet<string> | null): Sug
   return items
 }
 
-// Session-local view state; a hot reload resets it, which is fine.
 let view: View = { kind: 'hidden' }
 
 function show($: EngineInterface, nextView: View): void {
   view = nextView
+  void update($, savedView, () => nextView).catch(() => undefined)
   $.ui.invalidate('ui.render')
+}
+
+async function suggest($: EngineInterface, turnId: string, suggestsSkills: boolean): Promise<void> {
+  let items: Suggestion[] = []
+  try {
+    const commands = await $.command.list().catch(() => null)
+    const known = commands === null ? null : new Set(commands.map(command => command.name))
+    const skills = suggestsSkills && commands !== null ? skillList(commands) : ''
+    const reply = await $.model.fork({ prompt: forkPrompt(skills) })
+    items = reply.isAnswered ? parseSuggestions(reply.text, known) : []
+  } catch (error) {
+    $.ui.log(`fork failed: ${String(error)}`)
+  }
+  if (view.kind !== 'loading' || view.turnId !== turnId) return
+  show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
+  if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
 }
 
 type ShownView = Exclude<View, { kind: 'hidden' }>
@@ -192,7 +208,7 @@ function fitLabel(label: string, room: number): string {
 
 function fillDraft($: EngineInterface, prompt: string): void {
   void $.prompt.fill({ text: prompt }).then(
-    r => r.isFilled || $.ui.toast('could not fill the prompt box'),
+    r => r.isFilled || $.ui.toast(r.refusal === 'dialog' ? 'close the open dialog, then pick again' : 'could not fill the prompt box'),
     error => $.ui.toast(`could not fill: ${String(error)}`),
   )
 }
@@ -239,59 +255,48 @@ function terminalBand(
   )
 }
 
-function desktopBand(
-  $: EngineInterface,
-  e: RenderInputOf<'AbovePrompt', 'desktop'>,
-  below: RenderElement,
-  shown: ShownView,
-): RenderElement {
-  const { Box, Button, Text } = $.ui.resolve(e)
+let mayBeOpen = true
 
-  if (shown.kind === 'loading') return below
+async function findPane($: EngineInterface) {
+  return (await $.ui.panes().catch(() => [])).find(pane => pane.id === PANE)
+}
 
-  const count = shown.items.length
-  const rowPx = (e.props.bodyColumns || 100) * COLUMN_PX - DISMISS_PX - (count - 1) * SEPARATOR_PX
-  const labelRoom = Math.max(LABEL_MIN, Math.floor(rowPx / count / CHAR_PX))
+async function openPane($: EngineInterface): Promise<void> {
+  const opened = await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
+  if (opened !== undefined) mayBeOpen = true
+  if (opened?.isPlaced === false) $.ui.toast(opened.reason)
+}
 
-  return (
-    <Box flexDirection="column" gap={1}>
-      {below}
-      <Box key="next-steps" flexDirection="row" flexWrap="nowrap" overflow="hidden" alignItems="center" gap={1}>
-        {shown.items.flatMap((item, index) => [
-          ...(index > 0
-            ? [
-                <Box key={`next-step-separator-${index}`}>
-                  <Text dimColor>·</Text>
-                </Box>,
-              ]
-            : []),
-          <Button
-            key={`next-step-${index + 1}`}
-            plain
-            dimColor
-            label={fitLabel(item.label, labelRoom)}
-            onPress={() => fillDraft($, item.prompt)}
-          />,
-        ])}
-        <Box flexGrow={1} />
-        <Button
-          key="next-steps-dismiss"
-          plain
-          dimColor
-          label="✕"
-          onPress={() => show($, { kind: 'hidden' })}
-        />
-      </Box>
-    </Box>
-  )
+async function togglePane($: EngineInterface): Promise<void> {
+  const pane = await findPane($)
+  if (pane !== undefined) await $.ui.close({ id: PANE }).catch(() => undefined)
+  if (pane === undefined || !pane.isShown || !pane.isPlaced) await openPane($)
+}
+
+async function closePane($: EngineInterface): Promise<void> {
+  if (!mayBeOpen) return
+  if ((await findPane($)) !== undefined) await $.ui.close({ id: PANE }).catch(() => undefined)
+  mayBeOpen = false
 }
 
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
 
+  on('session.start', async ($, e, next) => {
+    const started = await next(e)
+    await closePane($)
+    const kept = await read($, savedView)
+    if (kept.kind === 'hidden' || view.kind !== 'hidden') return started
+    view = kept
+    $.ui.invalidate('ui.render')
+    if (kept.kind === 'loading') void suggest($, kept.turnId, suggestsSkills)
+    return started
+  })
+
   // A new turn (typed or otherwise) hides whatever was offered.
   on('turn.start', async ($, e, next) => {
+    await closePane($)
     if (view.kind !== 'hidden') show($, { kind: 'hidden' })
     return next(e)
   })
@@ -302,23 +307,7 @@ export const register: Register = (on, options) => {
     if (e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
     const turnId = e.turnId
     show($, { kind: 'loading', turnId })
-    void (async () => {
-      let items: Suggestion[] = []
-      try {
-        // Without the list the fork still suggests; slash prompts go unchecked.
-        const commands = await $.command.list().catch(() => null)
-        const known = commands === null ? null : new Set(commands.map(command => command.name))
-        const skills = suggestsSkills && commands !== null ? skillList(commands) : ''
-        const reply = await $.model.fork({ prompt: forkPrompt(skills) })
-        items = reply.isAnswered ? parseSuggestions(reply.text, known) : []
-      } catch (error) {
-        $.ui.log(`fork failed: ${String(error)}`)
-      }
-      // A newer turn started (or another completed) while we waited: drop ours.
-      if (view.kind !== 'loading' || view.turnId !== turnId) return
-      show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
-      if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
-    })()
+    void suggest($, turnId, suggestsSkills)
     return result
   })
 
@@ -326,7 +315,67 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
     if (e.surface === 'terminal') return terminalBand($, e, below, view)
-    if (e.surface === 'desktop') return desktopBand($, e, below, view)
     return below
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next): Promise<RenderElement> => {
+    const below = await next(e)
+    const shown = view
+    if (e.surface !== 'desktop' || shown.kind !== 'offer') return below
+    const { Box, Button } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="row" alignItems="center" gap={1}>
+        <Button key="next-steps-chip" plain label={`💡 ${shown.items.length}`} onPress={() => togglePane($)} />
+        {below}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e): Promise<RenderElement> => {
+    const t = $.ui.resolve(e)
+    const { Box, Button, Text } = t
+    const shown = view
+    if (shown.kind !== 'offer') return <Text dimColor>No suggestions right now.</Text>
+    const isDesktop = e.surface === 'desktop'
+    const columns = e.props.bodyColumns || 40
+    const room = Math.max(LABEL_MIN, columns - 8)
+    const rowFill = ROW_FILL_CHAR.repeat(Math.max(1, Math.floor(columns * ROW_FILL_PER_COLUMN)))
+    return (
+      <Box flexDirection="column" gap={1}>
+        {shown.items.map((item, index) => (
+          <Box
+            key={`next-step-row-${index + 1}`}
+            position="relative"
+            flexDirection="row"
+            alignItems="flex-start"
+            gap={1}
+            paddingX={1}
+            minWidth={0}
+            {...(isDesktop ? {} : { hover: { backgroundColor: HOVER_BG } })}
+          >
+            <Text dimColor>{isDesktop ? String(index + 1) : `${index + 1}.`}</Text>
+            <Box flexDirection="column" flexGrow={1} minWidth={0}>
+              {isDesktop ? (
+                <Text key={`next-step-label-${index + 1}`} wrap="truncate">
+                  {fitLabel(item.label, room)}
+                </Text>
+              ) : (
+                <Button key={`next-step-${index + 1}`} plain label={fitLabel(item.label, room)} onPress={() => fillDraft($, item.prompt)} />
+              )}
+              <Text dimColor wrap="truncate">
+                {clean(item.prompt, PREVIEW_MAX)}
+              </Text>
+            </Box>
+            {isDesktop ? (
+              <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch">
+                <Button key={`next-step-${index + 1}`} plain label={rowFill} onPress={() => fillDraft($, item.prompt)} />
+              </Box>
+            ) : (
+              []
+            )}
+          </Box>
+        ))}
+      </Box>
+    )
   })
 }

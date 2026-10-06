@@ -1,11 +1,12 @@
 {
   "name": "next-steps-desktop",
-  "version": "1.0.0-desktop.8",
-  "description": "After each turn, suggests up to three next prompts above the input, in the terminal and in Claude Code Desktop. Press 1, 2 or 3 (or click one) to put it in the prompt box as a draft you can edit, 0 to dismiss.",
+  "version": "1.0.0-desktop.15",
+  "description": "After each turn, suggests up to three next prompts: above the input in the terminal, behind a 💡 chip in the footer of Claude Code Desktop that opens a numbered Next steps pane. Press 1, 2 or 3 (or click one) to put it in the prompt box as a draft you can edit; in the terminal 0 dismisses.",
   "author": {
     "name": "Thariq Shihipar"
   },
   "license": "MIT",
+  "types": "./types/index.d.ts",
   "keywords": ["suggestions", "next-steps", "prompt", "function-hooks", "ui", "desktop"],
   "userConfig": {
     "minAnswerChars": {

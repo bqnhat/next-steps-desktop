@@ -10,7 +10,7 @@
     {
       "name": "next-steps-desktop",
       "source": "./",
-      "description": "After each turn, suggests up to three next prompts above the input, in the terminal and in Claude Code Desktop; a press puts one in the prompt box as a draft"
+      "description": "After each turn, suggests up to three next prompts: above the input in the terminal, behind a 💡 footer chip and a Next steps pane in Claude Code Desktop; a press puts one in the prompt box as a draft"
     }
   ]
 }
